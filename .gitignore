@@ -44,6 +44,7 @@ data/paraphrased/
 # Models
 models/*.pkl
 models/*.pth
+models/*.csv
 models/*.bin
 models/bert_model/
 models/roberta_model/
@@ -71,3 +72,5 @@ Thumbs.db
 *.h5
 *.hdf5
 *.safetensors
+
+*.pdf
