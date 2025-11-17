@@ -276,6 +276,30 @@ Your project will be successful if you:
 
 ---
 
+## 🔍 Findings
+
+### Baseline Model Bias Issue
+**Issue Identified**: The baseline model may develop bias based on text length features (`char_count`, `word_count`, `sent_count`).
+
+**Problem**: If the training data contains longer AI-generated texts and shorter human-written texts, the model learns the spurious correlation "long text = AI" instead of actual stylistic differences. This fails when presented with long human-written texts or short AI-generated texts.
+
+**Current Feature Set**: All 15+ extracted stylometric features are used for training without feature selection:
+- Absolute length features: `char_count`, `word_count`, `sent_count`
+- Relative features: `avg_word_length`, `avg_sent_length`
+- Readability scores: Flesch Reading Ease, Flesch-Kincaid Grade, Gunning Fog, SMOG, ARI
+- Lexical diversity: TTR (Type-Token Ratio), MTLD
+- Punctuation density
+
+**Potential Solutions**:
+1. **Remove absolute length features** - Focus on style-based features only (avg_word_length, readability, lexical diversity)
+2. **Normalize by text length** - Use ratios instead of counts (char_per_word, words_per_sentence)
+3. **Control for length** - Add text length bins as categorical features
+4. **Analyze feature importance** - Check if length features dominate predictions before making changes
+
+**Recommendation**: Remove absolute length features (`char_count`, `word_count`, `sent_count`) and rely on relative stylometric features that capture writing **style** rather than writing **quantity**.
+
+---
+
 ## 📞 Getting Help
 
 ### Error Messages

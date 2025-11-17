@@ -126,7 +126,8 @@ def plot_confusion_matrix(y_true, y_pred, model_name="Model", save_path=None, re
     if return_fig:
         return fig
     
-    plt.show()
+    if not save_path:
+        plt.show()
     plt.close()
     return None
 
@@ -174,7 +175,8 @@ def plot_roc_curve(y_true, y_proba, model_name="Model", save_path=None, return_f
     if return_fig:
         return fig
     
-    plt.show()
+    if not save_path:
+        plt.show()
     plt.close()
     return None
 

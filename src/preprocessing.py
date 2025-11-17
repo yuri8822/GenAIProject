@@ -22,6 +22,11 @@ class TextPreprocessor:
             nltk.data.find('tokenizers/punkt')
         except LookupError:
             nltk.download('punkt')
+        
+        try:
+            nltk.data.find('tokenizers/punkt_tab')
+        except LookupError:
+            nltk.download('punkt_tab')
     
     def clean_text(self, text: str) -> str:
         """
@@ -45,6 +50,9 @@ class TextPreprocessor:
         """
         Extract stylometric features for text classification.
         
+        Note: Absolute length features (char_count, word_count, sent_count) are excluded
+        to prevent bias based on text length. Only relative stylometric features are used.
+        
         Args:
             text: Input text string
             
@@ -53,19 +61,21 @@ class TextPreprocessor:
         """
         features = {}
         
-        # Basic length features
-        features['char_count'] = len(text)
-        features['word_count'] = len(word_tokenize(text))
-        features['sent_count'] = len(sent_tokenize(text))
+        # Tokenize for feature calculation
+        words = word_tokenize(text)
+        sentences = sent_tokenize(text)
+        word_count = len(words)
+        sent_count = len(sentences)
+        char_count = len(text)
         
-        # Average lengths
-        if features['word_count'] > 0:
-            features['avg_word_length'] = features['char_count'] / features['word_count']
+        # Average lengths (relative features - keep these)
+        if word_count > 0:
+            features['avg_word_length'] = char_count / word_count
         else:
             features['avg_word_length'] = 0
             
-        if features['sent_count'] > 0:
-            features['avg_sent_length'] = features['word_count'] / features['sent_count']
+        if sent_count > 0:
+            features['avg_sent_length'] = word_count / sent_count
         else:
             features['avg_sent_length'] = 0
         
