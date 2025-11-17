@@ -64,15 +64,28 @@ def load_baseline_model():
 @st.cache_resource
 def load_bert_model():
     """Load BERT model from file."""
-    model_path = 'models/bert_model.pt'
-    if os.path.exists(model_path):
+    model_dir = 'models/bert_model'
+    if os.path.exists(model_dir):
         try:
-            model = BERTClassifier()
-            model.model.load_state_dict(torch.load(model_path, map_location=model.device))
-            model.model.eval()
-            return model
+            # Create classifier without initializing model
+            from transformers import BertForSequenceClassification, BertTokenizer
+            
+            classifier = BERTClassifier.__new__(BERTClassifier)
+            classifier.model_name = 'bert-base-uncased'
+            classifier.num_labels = 2
+            classifier.max_length = 512
+            classifier.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            
+            # Load fine-tuned model directly
+            classifier.model = BertForSequenceClassification.from_pretrained(model_dir).to(classifier.device)
+            classifier.tokenizer = BertTokenizer.from_pretrained(model_dir)
+            classifier.model.eval()
+            
+            return classifier
         except Exception as e:
             st.warning(f"Could not load BERT model: {e}")
+            import traceback
+            st.code(traceback.format_exc())
             return None
     return None
 
@@ -80,15 +93,28 @@ def load_bert_model():
 @st.cache_resource
 def load_roberta_model():
     """Load RoBERTa model from file."""
-    model_path = 'models/roberta_model.pt'
-    if os.path.exists(model_path):
+    model_dir = 'models/roberta_model'
+    if os.path.exists(model_dir):
         try:
-            model = RoBERTaClassifier()
-            model.model.load_state_dict(torch.load(model_path, map_location=model.device))
-            model.model.eval()
-            return model
+            # Create classifier without initializing model
+            from transformers import RobertaForSequenceClassification, RobertaTokenizer
+            
+            classifier = RoBERTaClassifier.__new__(RoBERTaClassifier)
+            classifier.model_name = 'roberta-base'
+            classifier.num_labels = 2
+            classifier.max_length = 512
+            classifier.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            
+            # Load fine-tuned model directly
+            classifier.model = RobertaForSequenceClassification.from_pretrained(model_dir).to(classifier.device)
+            classifier.tokenizer = RobertaTokenizer.from_pretrained(model_dir)
+            classifier.model.eval()
+            
+            return classifier
         except Exception as e:
             st.warning(f"Could not load RoBERTa model: {e}")
+            import traceback
+            st.code(traceback.format_exc())
             return None
     return None
 
@@ -726,8 +752,8 @@ def train_models(train_baseline, train_bert, train_roberta, train_file, val_file
             # Save model
             if save_models:
                 os.makedirs('models', exist_ok=True)
-                torch.save(model.model.state_dict(), 'models/bert_model.pt')
-                st.info("💾 Model saved to `models/bert_model.pt`")
+                model.save_model('models/bert_model')
+                st.info("💾 Model saved to `models/bert_model/`")
             
             # Save metrics and visualizations using evaluation.py
             if save_metrics:
@@ -827,8 +853,8 @@ def train_models(train_baseline, train_bert, train_roberta, train_file, val_file
             # Save model
             if save_models:
                 os.makedirs('models', exist_ok=True)
-                torch.save(model.model.state_dict(), 'models/roberta_model.pt')
-                st.info("💾 Model saved to `models/roberta_model.pt`")
+                model.save_model('models/roberta_model')
+                st.info("💾 Model saved to `models/roberta_model/`")
             
             # Save metrics and visualizations using evaluation.py
             if save_metrics:
