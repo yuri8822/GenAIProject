@@ -70,7 +70,8 @@ class RoBERTaClassifier:
                  max_length=512,
                  device=None,
                  dropout_rate=0.1,
-                 seed=42):
+                 seed=42,
+                 use_fp16=False):
         """
         Initialize RoBERTa classifier.
         
@@ -81,11 +82,13 @@ class RoBERTaClassifier:
             device: Device to use (cuda/cpu)
             dropout_rate: Dropout rate for regularization (default: 0.1)
             seed: Random seed for reproducibility (default: 42)
+            use_fp16: Use mixed precision training (FP16) for faster training and lower memory (default: False)
         """
         self.model_name = model_name
         self.num_labels = num_labels
         self.max_length = max_length
         self.seed = seed
+        self.use_fp16 = use_fp16 and torch.cuda.is_available()  # Only use FP16 if CUDA is available
         self.device = torch.device(device if device else ('cuda' if torch.cuda.is_available() else 'cpu'))
         self.training_history = []
         
@@ -101,6 +104,7 @@ class RoBERTaClassifier:
         
         print(f"Using device: {self.device}")
         print(f"Random seed: {seed}")
+        print(f"Mixed precision (FP16): {'Enabled' if self.use_fp16 else 'Disabled'}")
         
         # Initialize tokenizer and model with specified dropout
         self.tokenizer = RobertaTokenizer.from_pretrained(model_name)
@@ -193,6 +197,9 @@ class RoBERTaClassifier:
             num_training_steps=total_steps
         )
         
+        # Initialize gradient scaler for mixed precision training
+        scaler = torch.amp.GradScaler('cuda', enabled=self.use_fp16)
+        
         # Early stopping variables
         best_val_loss = float('inf')
         best_val_accuracy = 0.0
@@ -208,6 +215,7 @@ class RoBERTaClassifier:
         print(f"Total steps: {total_steps}")
         print(f"Regularization: weight_decay={weight_decay}")
         print(f"Learning rate: {learning_rate}")
+        print(f"Mixed precision (FP16): {'Enabled' if self.use_fp16 else 'Disabled'}")
         print(f"Early stopping patience: {early_stopping_patience} epochs" if use_early_stopping else "Early stopping: disabled")
         print(f"Random seed: {self.seed}")
         
@@ -228,18 +236,23 @@ class RoBERTaClassifier:
                 
                 optimizer.zero_grad()
                 
-                outputs = self.model(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    labels=labels
-                )
+                # Use automatic mixed precision if enabled
+                with torch.amp.autocast('cuda', enabled=self.use_fp16):
+                    outputs = self.model(
+                        input_ids=input_ids,
+                        attention_mask=attention_mask,
+                        labels=labels
+                    )
+                    
+                    loss = outputs.loss
+                    logits = outputs.logits
                 
-                loss = outputs.loss
-                logits = outputs.logits
-                
-                loss.backward()
+                # Backward pass with gradient scaling
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_grad_norm)
-                optimizer.step()
+                scaler.step(optimizer)
+                scaler.update()
                 scheduler.step()
                 
                 train_loss += loss.item()

@@ -547,6 +547,8 @@ def show_training():
             max_grad_norm = st.number_input("Max Gradient Norm", min_value=0.1, max_value=5.0,
                                            value=1.0, step=0.1, format="%.1f",
                                            help="Maximum gradient norm for clipping (prevents exploding gradients)")
+            use_fp16 = st.checkbox("Use Mixed Precision (FP16)", value=True,
+                                  help="Enables FP16 training for faster training and lower memory usage (GPU only)")
             
         st.subheader("Output Settings")
         col3, col4 = st.columns(2)
@@ -578,6 +580,7 @@ def show_training():
             max_length=max_length,
             max_grad_norm=max_grad_norm,
             seed=seed,
+            use_fp16=use_fp16,
             save_models=save_models,
             save_metrics=save_metrics
         )
@@ -585,7 +588,7 @@ def show_training():
 
 def train_models(train_baseline, train_bert, train_roberta, train_file, val_file,
                 epochs, batch_size, learning_rate, weight_decay, dropout_rate,
-                early_stopping_patience, max_length, max_grad_norm, seed,
+                early_stopping_patience, max_length, max_grad_norm, seed, use_fp16,
                 save_models, save_metrics):
     """Execute model training."""
     
@@ -721,13 +724,14 @@ def train_models(train_baseline, train_bert, train_roberta, train_file, val_file
             model = BERTClassifier(
                 max_length=max_length,
                 dropout_rate=dropout_rate,
-                seed=seed
+                seed=seed,
+                use_fp16=use_fp16
             )
             
             progress_bar.progress(20, text="Starting training...")
             st.info(f"Training for {epochs} epochs with batch size {batch_size}")
             st.info(f"🛡️ Regularization: weight_decay={weight_decay}, dropout={dropout_rate}, early_stopping={early_stopping_patience}")
-            st.info(f"⚙️ Configuration: max_length={max_length}, max_grad_norm={max_grad_norm}, seed={seed}")
+            st.info(f"⚙️ Configuration: max_length={max_length}, max_grad_norm={max_grad_norm}, seed={seed}, fp16={'Enabled' if use_fp16 else 'Disabled'}")
             
             # Train with progress updates
             training_history = model.train(
@@ -864,13 +868,14 @@ def train_models(train_baseline, train_bert, train_roberta, train_file, val_file
             model = RoBERTaClassifier(
                 max_length=max_length,
                 dropout_rate=dropout_rate,
-                seed=seed
+                seed=seed,
+                use_fp16=use_fp16
             )
             
             progress_bar.progress(20, text="Starting training...")
             st.info(f"Training for {epochs} epochs with batch size {batch_size}")
             st.info(f"🛡️ Regularization: weight_decay={weight_decay}, dropout={dropout_rate}, early_stopping={early_stopping_patience}")
-            st.info(f"⚙️ Configuration: max_length={max_length}, max_grad_norm={max_grad_norm}, seed={seed}")
+            st.info(f"⚙️ Configuration: max_length={max_length}, max_grad_norm={max_grad_norm}, seed={seed}, fp16={'Enabled' if use_fp16 else 'Disabled'}")
             
             # Train with progress updates
             training_history = model.train(
