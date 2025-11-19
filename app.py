@@ -74,7 +74,9 @@ def load_bert_model():
             classifier.model_name = 'bert-base-uncased'
             classifier.num_labels = 2
             classifier.max_length = 512
-            classifier.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            classifier.seed = 42
+            classifier.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            classifier.training_history = []
             
             # Load fine-tuned model directly
             classifier.model = BertForSequenceClassification.from_pretrained(model_dir).to(classifier.device)
@@ -103,7 +105,9 @@ def load_roberta_model():
             classifier.model_name = 'roberta-base'
             classifier.num_labels = 2
             classifier.max_length = 512
-            classifier.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            classifier.seed = 42
+            classifier.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            classifier.training_history = []
             
             # Load fine-tuned model directly
             classifier.model = RobertaForSequenceClassification.from_pretrained(model_dir).to(classifier.device)
@@ -518,14 +522,37 @@ def show_training():
         with col1:
             st.subheader("Transformer Settings")
             st.info("ℹ️ These settings apply only to BERT and RoBERTa models, not the Baseline model.")
-            epochs = st.number_input("Epochs", min_value=1, max_value=10, value=3)
+            epochs = st.number_input("Epochs", min_value=1, max_value=20, value=3)
             batch_size = st.number_input("Batch Size", min_value=4, max_value=64, value=16)
             learning_rate = st.number_input("Learning Rate", min_value=1e-6, max_value=1e-3, 
                                            value=2e-5, format="%.6f")
+            max_length = st.number_input("Max Sequence Length", min_value=128, max_value=512,
+                                        value=512, step=64,
+                                        help="Maximum number of tokens per text sample")
+            seed = st.number_input("Random Seed", min_value=0, max_value=9999,
+                                  value=42,
+                                  help="Random seed for reproducibility")
         
         with col2:
-            st.subheader("Output Settings")
+            st.subheader("Regularization (Anti-Overfitting)")
+            weight_decay = st.number_input("Weight Decay (L2)", min_value=0.0, max_value=0.1,
+                                          value=0.01, step=0.01, format="%.3f",
+                                          help="L2 regularization strength. Higher = more regularization")
+            dropout_rate = st.slider("Dropout Rate", min_value=0.0, max_value=0.5,
+                                    value=0.1, step=0.05,
+                                    help="Probability of dropping neurons during training")
+            early_stopping = st.number_input("Early Stopping Patience", min_value=1, max_value=10,
+                                           value=3,
+                                           help="Stop training if no improvement for N epochs")
+            max_grad_norm = st.number_input("Max Gradient Norm", min_value=0.1, max_value=5.0,
+                                           value=1.0, step=0.1, format="%.1f",
+                                           help="Maximum gradient norm for clipping (prevents exploding gradients)")
+            
+        st.subheader("Output Settings")
+        col3, col4 = st.columns(2)
+        with col3:
             save_models = st.checkbox("Save trained models", value=True)
+        with col4:
             save_metrics = st.checkbox("Save evaluation metrics", value=True)
     
     # Train button
@@ -545,13 +572,21 @@ def show_training():
             epochs=epochs,
             batch_size=batch_size,
             learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            dropout_rate=dropout_rate,
+            early_stopping_patience=early_stopping,
+            max_length=max_length,
+            max_grad_norm=max_grad_norm,
+            seed=seed,
             save_models=save_models,
             save_metrics=save_metrics
         )
 
 
 def train_models(train_baseline, train_bert, train_roberta, train_file, val_file,
-                epochs, batch_size, learning_rate, save_models, save_metrics):
+                epochs, batch_size, learning_rate, weight_decay, dropout_rate,
+                early_stopping_patience, max_length, max_grad_norm, seed,
+                save_models, save_metrics):
     """Execute model training."""
     
     # Load data
@@ -683,18 +718,27 @@ def train_models(train_baseline, train_bert, train_roberta, train_file, val_file
         
         try:
             progress_bar.progress(10, text="Loading BERT model...")
-            model = BERTClassifier()
+            model = BERTClassifier(
+                max_length=max_length,
+                dropout_rate=dropout_rate,
+                seed=seed
+            )
             
             progress_bar.progress(20, text="Starting training...")
             st.info(f"Training for {epochs} epochs with batch size {batch_size}")
+            st.info(f"🛡️ Regularization: weight_decay={weight_decay}, dropout={dropout_rate}, early_stopping={early_stopping_patience}")
+            st.info(f"⚙️ Configuration: max_length={max_length}, max_grad_norm={max_grad_norm}, seed={seed}")
             
             # Train with progress updates
-            model.train(
+            training_history = model.train(
                 train_texts, train_labels,
                 val_texts, val_labels,
                 batch_size=batch_size,
                 epochs=epochs,
-                learning_rate=learning_rate
+                learning_rate=learning_rate,
+                weight_decay=weight_decay,
+                max_grad_norm=max_grad_norm,
+                early_stopping_patience=early_stopping_patience
             )
             
             progress_bar.progress(90, text="Evaluating...")
@@ -747,6 +791,39 @@ def train_models(train_baseline, train_bert, train_roberta, train_file, val_file
                                                      target_names=['Human', 'AI-Generated'])
                 st.dataframe(report_df, width='stretch')
             
+            # Training History
+            if training_history:
+                with st.expander("📈 Training History"):
+                    history_df = pd.DataFrame(training_history)
+                    st.dataframe(history_df, width='stretch')
+                    
+                    # Plot training curves
+                    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+                    
+                    # Loss
+                    axes[0].plot(history_df['epoch'], history_df['train_loss'], label='Train Loss', marker='o')
+                    if 'val_loss' in history_df.columns:
+                        axes[0].plot(history_df['epoch'], history_df['val_loss'], label='Val Loss', marker='o')
+                    axes[0].set_xlabel('Epoch')
+                    axes[0].set_ylabel('Loss')
+                    axes[0].set_title('Training and Validation Loss')
+                    axes[0].legend()
+                    axes[0].grid(alpha=0.3)
+                    
+                    # Accuracy
+                    axes[1].plot(history_df['epoch'], history_df['train_accuracy'], label='Train Accuracy', marker='o')
+                    if 'val_accuracy' in history_df.columns:
+                        axes[1].plot(history_df['epoch'], history_df['val_accuracy'], label='Val Accuracy', marker='o')
+                    axes[1].set_xlabel('Epoch')
+                    axes[1].set_ylabel('Accuracy')
+                    axes[1].set_title('Training and Validation Accuracy')
+                    axes[1].legend()
+                    axes[1].grid(alpha=0.3)
+                    
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                    plt.close(fig)
+            
             results['bert'] = metrics
             
             # Save model
@@ -784,18 +861,27 @@ def train_models(train_baseline, train_bert, train_roberta, train_file, val_file
         
         try:
             progress_bar.progress(10, text="Loading RoBERTa model...")
-            model = RoBERTaClassifier()
+            model = RoBERTaClassifier(
+                max_length=max_length,
+                dropout_rate=dropout_rate,
+                seed=seed
+            )
             
             progress_bar.progress(20, text="Starting training...")
             st.info(f"Training for {epochs} epochs with batch size {batch_size}")
+            st.info(f"🛡️ Regularization: weight_decay={weight_decay}, dropout={dropout_rate}, early_stopping={early_stopping_patience}")
+            st.info(f"⚙️ Configuration: max_length={max_length}, max_grad_norm={max_grad_norm}, seed={seed}")
             
             # Train with progress updates
-            model.train(
+            training_history = model.train(
                 train_texts, train_labels,
                 val_texts, val_labels,
                 batch_size=batch_size,
                 epochs=epochs,
-                learning_rate=learning_rate
+                learning_rate=learning_rate,
+                weight_decay=weight_decay,
+                max_grad_norm=max_grad_norm,
+                early_stopping_patience=early_stopping_patience
             )
             
             progress_bar.progress(90, text="Evaluating...")
@@ -847,6 +933,39 @@ def train_models(train_baseline, train_bert, train_roberta, train_file, val_file
                 report_df = get_classification_report(val_labels, val_pred, 
                                                      target_names=['Human', 'AI-Generated'])
                 st.dataframe(report_df, width='stretch')
+            
+            # Training History
+            if training_history:
+                with st.expander("📈 Training History"):
+                    history_df = pd.DataFrame(training_history)
+                    st.dataframe(history_df, width='stretch')
+                    
+                    # Plot training curves
+                    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+                    
+                    # Loss
+                    axes[0].plot(history_df['epoch'], history_df['train_loss'], label='Train Loss', marker='o')
+                    if 'val_loss' in history_df.columns:
+                        axes[0].plot(history_df['epoch'], history_df['val_loss'], label='Val Loss', marker='o')
+                    axes[0].set_xlabel('Epoch')
+                    axes[0].set_ylabel('Loss')
+                    axes[0].set_title('Training and Validation Loss')
+                    axes[0].legend()
+                    axes[0].grid(alpha=0.3)
+                    
+                    # Accuracy
+                    axes[1].plot(history_df['epoch'], history_df['train_accuracy'], label='Train Accuracy', marker='o')
+                    if 'val_accuracy' in history_df.columns:
+                        axes[1].plot(history_df['epoch'], history_df['val_accuracy'], label='Val Accuracy', marker='o')
+                    axes[1].set_xlabel('Epoch')
+                    axes[1].set_ylabel('Accuracy')
+                    axes[1].set_title('Training and Validation Accuracy')
+                    axes[1].legend()
+                    axes[1].grid(alpha=0.3)
+                    
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                    plt.close(fig)
             
             results['roberta'] = metrics
             
